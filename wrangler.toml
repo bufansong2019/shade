@@ -1,0 +1,21 @@
+name = "shade"
+main = "index.js"
+compatibility_date = "2026-05-03"
+
+# 部署前使用以下命令设置密钥（替代此处硬编码）：
+#   npx wrangler secret put SECRET_KEY
+# 本地开发可用 --secret 参数：
+#   npx wrangler dev --secret SECRET_KEY=your-secret-key
+
+[vars]
+MAX_UPLOAD_SIZE_MB = "200"
+
+# R2 存储桶绑定
+[[r2_buckets]]
+binding = "BUCKET_R2"
+bucket_name = "shade-bucket"
+
+# KV 命名空间
+[[kv_namespaces]]
+binding = "SHARES_KV"
+id = "2e1e12a6c3be4c368e06574cee81c8ee"
