@@ -383,6 +383,11 @@ const THEME = `
     color: #d32f2f;
   }
 
+  /* Scale up on desktop (especially 1080p) */
+  @media (min-width: 800px) {
+    .window { zoom: 1.3; }
+  }
+
   @media (max-width: 640px) {
     body { padding: 10px; }
     .body-split { flex-direction: column; }

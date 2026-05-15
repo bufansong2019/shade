@@ -1,5 +1,9 @@
 node_modules
 
+# npm
+package.json
+package-lock.json
+
 # claude
 .claude
 startClaude.bat
