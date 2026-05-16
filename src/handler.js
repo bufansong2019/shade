@@ -139,9 +139,8 @@ export async function terminalAuth(request, env) {
   const body = await request.json().catch(() => ({}));
   if (!body.password) return json({ error: 'Password required' }, 400);
 
-  const storedHash = await env.SHARES_KV.get('term:pass');
   const submitted = await hashPassword(body.password);
-  const expected = storedHash || await hashPassword(env.SECRET_KEY);
+  const expected = await hashPassword(env.SECRET_KEY);
   if (submitted !== expected) return json({ error: 'Login incorrect' }, 401);
 
   const token = await signToken(
