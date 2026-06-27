@@ -1,5 +1,5 @@
 import { homePage, errorPage } from './src/html.js';
-import { createShare, checkKey, retrieveShare, terminalAuth, terminalStats, terminalCleanup } from './src/handler.js';
+import { createShare, checkKey, retrieveShare } from './src/handler.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -45,31 +45,10 @@ export default {
         return retrieveShare(key, request, env, ctx);
       }
 
-      // Terminal Easter Egg routes
-      if (path === '/api/terminal/auth' && method === 'POST') {
-        return terminalAuth(request, env);
-      }
-
-      if (path === '/api/terminal/stats' && method === 'GET') {
-        return terminalStats(request, env);
-      }
-
-      if (path === '/api/terminal/cleanup' && method === 'POST') {
-        return terminalCleanup(request, env);
-      }
 
       // favicon
       if (path === '/favicon.ico') {
         return new Response(null, { status: 204 });
-      }
-
-      // Static fonts from R2
-      if (path.startsWith('/fonts/') && method === 'GET') {
-        const key = path.slice(1);
-        const obj = await env.BUCKET_R2.get(key);
-        if (!obj) return new Response('Not found', { status: 404 });
-        const headers = { 'Content-Type': 'font/woff2', 'Cache-Control': 'public, max-age=31536000', 'Access-Control-Allow-Origin': '*' };
-        return new Response(obj.body, { headers });
       }
 
       // 404

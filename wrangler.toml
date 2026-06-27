@@ -2,10 +2,7 @@ name = "shade"
 main = "index.js"
 compatibility_date = "2026-05-03"
 
-# 部署前使用以下命令设置密钥（替代此处硬编码）：
-#   npx wrangler secret put SECRET_KEY
-# 本地开发可用 --secret 参数：
-#   npx wrangler dev --secret SECRET_KEY=your-secret-key
+# 密码采用纯 SHA-256 哈希（临时分享，不加盐）
 
 [vars]
 MAX_UPLOAD_SIZE_MB = "200"

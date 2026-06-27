@@ -1,18 +1,29 @@
-import { createUniqueKey, hashPassword, json, badRequest, serverError, unauthorized, notFound, signToken, verifyToken, getFileList, generateKey } from './lib.js';
+import { createUniqueKey, hashPassword, json, badRequest, serverError, unauthorized, notFound, getFileList, generateKey } from './lib.js';
 import { viewPage, errorPage, renderShareContent } from './html.js';
 
 const MAX_TEXT_SIZE = 10000;
+// ===== Helper Factories =====
+function htmlResponse(body, status = 200) {
+  return new Response(body, { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
+async function checkRateLimit(env, ip, prefix, limit = 5, windowSec = 60) {
+  const rlKey = prefix + ip;
+  const count = Number(await env.SHARES_KV.get(rlKey) || 0);
+  if (count >= limit) return false;
+  await env.SHARES_KV.put(rlKey, String(count + 1), { expirationTtl: windowSec });
+  return true;
+}
+
+function scheduleBurnCleanup(share, key, ctx, env) {
+  if (share.expireLabel === "burn") ctx.waitUntil(cleanupShare(key, env));
+}
 
 export async function createShare(request, env, ctx) {
   try {
     // 频率限制：每分钟 5 次
-    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-    const rlKey = `rl:${ip}`;
-    const rlCount = await env.SHARES_KV.get(rlKey);
-    if (rlCount && parseInt(rlCount) >= 5) {
+    if (!await checkRateLimit(env, request.headers.get('CF-Connecting-IP') || 'unknown', 'rl:'))
       return json({ error: '请求过于频繁，请稍后重试' }, 429);
-    }
-    await env.SHARES_KV.put(rlKey, String((parseInt(rlCount) || 0) + 1), { expirationTtl: 60 });
     const ct = request.headers.get('Content-Type') || '';
     let type, content, expire, password;
     const uploadedFiles = [];
@@ -40,15 +51,17 @@ export async function createShare(request, env, ctx) {
     if (type === 'text' && content.length > MAX_TEXT_SIZE) return badRequest('文本内容超出最大字符限制');
     if (type === 'file' && uploadedFiles.length === 0) return badRequest('请至少选择一个文件');
     if (type === 'file' && uploadedFiles.length > 5) return badRequest('最多 5 个文件');
+    if (expire === 'burn' && type === 'file' && uploadedFiles.length > 1) return badRequest('阅后即焚模式最多支持 1 个文件');
+        if (password && !/^.{1,6}$/.test(password)) return badRequest('密码最多 6 位字符');
 
     if (type === 'file') {
-      const maxBytes = parseInt(env.MAX_UPLOAD_SIZE_MB || '50', 10) * 1024 * 1024;
+      const maxBytes = parseInt(env.MAX_UPLOAD_SIZE_MB || '200', 10) * 1024 * 1024;
       for (const f of uploadedFiles) {
         if (f.size > maxBytes) return badRequest(`文件 "${f.name}" 超出大小限制`);
       }
     }
 
-    const ttlMap = { '30m': 1800, '1h': 3600, '6h': 21600, '12h': 43200 };
+    const ttlMap = { '30m': 1800, '1h': 3600, '6h': 21600, '12h': 43200, 'burn': 86400 };
     if (expire && !Object.hasOwn(ttlMap, expire)) return badRequest('过期时间无效');
     const ttl = ttlMap[expire] || undefined;
 
@@ -78,7 +91,7 @@ export async function createShare(request, env, ctx) {
           httpMetadata: { contentType: f.type },
           customMetadata: { filename: f.name },
         });
-        files.push({ name: f.name, size: f.size, type: f.type, key: r2Key });
+          files.push({ name: f.name, size: f.size, type: f.type, key: r2Key });
         totalSize += f.size;
       }
       shareData.files = files;
@@ -102,10 +115,10 @@ export async function createShare(request, env, ctx) {
 async function serveFile(share, env, fileName) {
   const files = getFileList(share);
   const fileInfo = fileName ? files.find(f => f.name === fileName) : files[0];
-  if (!fileInfo) return notFound('文件未找到');
+  if (!fileInfo) return htmlResponse(errorPage('404', '文件未找到', ''), 404);
 
   const fileObj = await env.BUCKET_R2.get(fileInfo.key);
-  if (!fileObj) return notFound('文件未找到');
+  if (!fileObj) return htmlResponse(errorPage('404', '文件未找到', ''), 404);
   return new Response(fileObj.body, {
     headers: {
       'Content-Type': fileInfo.type || 'application/octet-stream',
@@ -114,94 +127,6 @@ async function serveFile(share, env, fileName) {
       'X-Filename': fileInfo.name,
     }
   });
-}
-
-async function checkTerminalAuth(request, env) {
-  const header = request.headers.get('Authorization') || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-  if (!token) return null;
-  try {
-    return await verifyToken(token, env.SECRET_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export async function terminalAuth(request, env) {
-  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-  const rlKey = `rl-term:${ip}`;
-  const rlCount = await env.SHARES_KV.get(rlKey);
-  if (rlCount && parseInt(rlCount) >= 10) {
-    return json({ error: '操作过于频繁，请稍后重试' }, 429);
-  }
-  await env.SHARES_KV.put(rlKey, String((parseInt(rlCount) || 0) + 1), { expirationTtl: 60 });
-
-  const body = await request.json().catch(() => ({}));
-  if (!body.password) return json({ error: 'Password required' }, 400);
-
-  const submitted = await hashPassword(body.password);
-  const expected = await hashPassword(env.SECRET_KEY);
-  if (submitted !== expected) return json({ error: 'Login incorrect' }, 401);
-
-  const token = await signToken(
-    { role: 'admin', exp: Math.floor(Date.now() / 1000) + 3600 },
-    env.SECRET_KEY
-  );
-  return json({ token });
-}
-
-export async function terminalStats(request, env) {
-  const auth = await checkTerminalAuth(request, env);
-  if (!auth) return json({ error: 'Unauthorized' }, 401);
-
-  let cursor, textShares = 0, fileShares = 0, totalSizeBytes = 0, expiredShares = 0;
-  const now = Math.floor(Date.now() / 1000);
-  do {
-    const listed = await env.SHARES_KV.list({ prefix: 'share:', cursor, limit: 1000 });
-    cursor = listed.cursor;
-    for (const { name } of listed.keys) {
-      const raw = await env.SHARES_KV.get(name);
-      if (!raw) continue;
-      try {
-        const share = JSON.parse(raw);
-        if (share.expiresAt && now > share.expiresAt) { expiredShares++; continue; }
-        if (share.type === 'text') textShares++;
-        else fileShares++;
-        if (share.files) totalSizeBytes += share.files.reduce((s, f) => s + (f.size || 0), 0);
-        else if (share.fileSize) totalSizeBytes += share.fileSize;
-      } catch {}
-    }
-  } while (cursor);
-
-  return json({ textShares, fileShares, totalShares: textShares + fileShares, totalSizeBytes, expiredShares });
-}
-
-export async function terminalCleanup(request, env) {
-  const auth = await checkTerminalAuth(request, env);
-  if (!auth) return json({ error: 'Unauthorized' }, 401);
-
-  let cursor, cleaned = 0, freedBytes = 0;
-  const now = Math.floor(Date.now() / 1000);
-  do {
-    const listed = await env.SHARES_KV.list({ prefix: 'share:', cursor, limit: 1000 });
-    cursor = listed.cursor;
-    for (const { name } of listed.keys) {
-      const raw = await env.SHARES_KV.get(name);
-      if (!raw) continue;
-      try {
-        const share = JSON.parse(raw);
-        if (share.expiresAt && now > share.expiresAt) {
-          if (share.files) freedBytes += share.files.reduce((s, f) => s + (f.size || 0), 0);
-          else if (share.fileSize) freedBytes += share.fileSize;
-          await cleanupShare(name.replace('share:', ''), env);
-          cleaned++;
-        }
-      } catch {}
-    }
-  } while (cursor);
-
-  await cleanupOrphanedFiles(env);
-  return json({ cleaned, freedBytes });
 }
 
 export async function checkKey(key, env) {
@@ -224,7 +149,7 @@ async function cleanupShare(key, env) {
     for (const obj of objects.objects) {
       await env.BUCKET_R2.delete(obj.key);
     }
-  } catch (e) { /* ignore R2 cleanup errors */ }
+  } catch (e) { console.error('R2 cleanup error for ' + key + ':', e.message); }
 }
 
 async function cleanupOrphanedFiles(env) {
@@ -263,23 +188,27 @@ async function throttledCleanup(env) {
 
 export async function retrieveShare(key, request, env, ctx) {
   const host = new URL(request.url).host;
+
+  // 频率限制：密码验证每分钟 5 次
+  if (request.method === 'POST') {
+    const ct = request.headers.get('Content-Type') || '';
+    // Skip rate limit for session-token form submissions (already authenticated)
+    if (!ct.includes('multipart/form-data')) {
+      if (!await checkRateLimit(env, request.headers.get('CF-Connecting-IP') || 'unknown', 'rl:retrieve:'))
+        return json({ error: '请求过于频繁，请稍后重试' }, 429);
+    }
+  }
   const data = await env.SHARES_KV.get(`share:${key}`);
-  if (!data) return new Response(errorPage('Not found', '此分享不存在', host), {
-    status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' }
-  });
+  if (!data) return htmlResponse(errorPage('404', '此链接不存在或已被销毁', host), 404);
 
   let share;
   try { share = JSON.parse(data); } catch {
-    return new Response(errorPage('错误', '此分享数据已损坏。', host), {
-      status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' }
-    });
+    return htmlResponse(errorPage('错误', '此链接数据已损坏', host), 500);
   }
 
   if (share.expiresAt && Date.now() / 1000 > share.expiresAt) {
     await cleanupShare(key, env);
-    return new Response(errorPage('已过期', '此分享已过期并已删除。', host), {
-      status: 410, headers: { 'Content-Type': 'text/html; charset=utf-8' }
-    });
+    return htmlResponse(errorPage('已过期', '此链接已过期并已被销毁', host), 410);
   }
 
   ctx.waitUntil(throttledCleanup(env));
@@ -307,12 +236,10 @@ export async function retrieveShare(key, request, env, ctx) {
     if (body.token) {
       const sessKey = await env.SHARES_KV.get(`sess:${body.token}`);
       if (sessKey === key) {
-        if (share.type === 'file' && body.fileName) return serveFile(share, env, body.fileName);
+        if (share.type === 'file') return serveFile(share, env, body.fileName);
         const newToken = generateKey();
         await env.SHARES_KV.put(`sess:${newToken}`, key, { expirationTtl: 300 });
-        return new Response(renderShareContent({ ...share, key, sessionToken: newToken }, host), {
-          status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }
-        });
+        return htmlResponse(renderShareContent({...share, key, sessionToken: newToken}, host));
       }
     }
 
@@ -320,9 +247,7 @@ export async function retrieveShare(key, request, env, ctx) {
     if (isDownload) return unauthorized('需要密码');
 
     if (!body.password) {
-      return new Response(viewPage({ ...share, key }, host), {
-        status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }
-      });
+      return htmlResponse(viewPage({...share, key}, host));
     }
 
     const storedHash = await env.SHARES_KV.get(`pass:${key}`);
@@ -335,35 +260,39 @@ export async function retrieveShare(key, request, env, ctx) {
 
     // Text share — render content
     if (share.type === 'text') {
-      return new Response(renderShareContent({ ...share, key }, host), {
-        status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }
-      });
+      scheduleBurnCleanup(share, key, ctx, env);
+      return htmlResponse(renderShareContent({...share, key}, host));
+
     }
 
     // Serve specific file if requested
-    if (body.fileName) return serveFile(share, env, body.fileName);
+    if (body.fileName) {
+      scheduleBurnCleanup(share, key, ctx, env);
+      return serveFile(share, env, body.fileName);
+    }
 
-    // Single file → serve directly
+    // Single file → show content page with download button
     const files = getFileList(share);
-    if (files.length <= 1) return serveFile(share, env);
+    if (files.length <= 1) {
+      scheduleBurnCleanup(share, key, ctx, env);
+      return htmlResponse(renderShareContent({...share, key, sessionToken}, host));
+    }
 
     // Multiple files → show file list with session token (not the raw password)
-    return new Response(renderShareContent({ ...share, key, sessionToken }, host), {
-      status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }
-    });
+    return htmlResponse(renderShareContent({...share, key, sessionToken}, host));
   }
 
   // No password
   if (share.type === 'text') {
-    return new Response(renderShareContent({ ...share, key }, host), {
-      status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }
-    });
+    scheduleBurnCleanup(share, key, ctx, env);
+    return htmlResponse(renderShareContent({...share, key}, host));
   }
 
   if (isDownload) {
+    scheduleBurnCleanup(share, key, ctx, env);
     return serveFile(share, env, fileName);
   }
-  return new Response(renderShareContent({ ...share, key }, host), {
-    status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' }
-  });
+  scheduleBurnCleanup(share, key, ctx, env);
+  return htmlResponse(renderShareContent({...share, key}, host));
+
 }

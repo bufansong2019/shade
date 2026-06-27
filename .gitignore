@@ -1,12 +1,5 @@
 node_modules
-
-# npm
-package.json
-package-lock.json
-
-# claude
+.wrangler
+.dev.vars
 .claude
 startClaude.bat
-
-# wrangler
-.wrangler
