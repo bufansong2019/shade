@@ -19,7 +19,7 @@ const ICONS = {
 const THEME_TOGGLE_HTML =
   '<span class="theme-toggle" onclick="toggleTheme()"><span id="themeLabel"></span></span>';
 
-const THEME_TOGGLE_POS = '<div style="position:absolute;top:0.75rem;right:1.75rem;font-size:0.7rem">' + THEME_TOGGLE_HTML + '</div>';
+const THEME_TOGGLE_POS = '<div class="theme-pos">' + THEME_TOGGLE_HTML + '</div>';
 
 const THEME = `
   :root {
@@ -323,6 +323,7 @@ const THEME = `
     color: var(--primary);
     word-break: break-all;
     font-family: 'SF Mono', 'Courier New', Consolas, monospace;
+    min-width: 0;
   }
   .copy-icon { color: var(--text-secondary); cursor: pointer; flex-shrink: 0; transition: color 0.2s; }
   .copy-icon:hover { color: var(--primary); }
@@ -416,7 +417,7 @@ const THEME = `
     font-family: 'SF Mono', 'Courier New', Consolas, monospace;
     white-space: pre-wrap;
     word-break: break-word;
-    max-height: 60vh;
+    max-height: 40vh;
     overflow-y: auto;
   }
 
@@ -463,6 +464,13 @@ const THEME = `
     color: var(--text-secondary);
   }
   .theme-toggle:hover { color: var(--primary); }
+  .theme-pos {
+    position: absolute;
+    top: 0.75rem;
+    right: 1.75rem;
+    font-size: 0.7rem;
+    z-index: 10;
+  }
 
   /* Utilities */
   .hidden { display: none !important; }
@@ -493,23 +501,27 @@ const THEME = `
   textarea::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
 
   /* Responsive */
+  @media (max-width: 768px) {
+    .theme-pos { top: 0.5rem; right: 1rem; }
+  }
   @media (max-width: 640px) {
-    body { padding: 16px; }
+    body { padding: 4rem 16px 16px; justify-content: flex-start; }
     .card { padding: 1.5rem 1.25rem; border-radius: 16px; }
     .tabs .tab { font-size: 0.85rem; padding: 0.5rem 0; }
     textarea { min-height: 100px; }
     .upload-area { padding: 1.25rem 0.75rem; }
     .btn { padding: 0.7rem; font-size: 0.9rem; }
-    .link-box { flex-direction: column; gap: 6px; }
+    .link-box { gap: 6px; }
     .link-box .link-text { font-size: 0.8rem; }
     .content-box { font-size: 0.8rem; padding: 0.75rem; }
     .card-wide { max-width: 100%; }
   }
   @media (max-width: 400px) {
-    body { padding: 10px; }
+    body { padding: 2.5rem 10px 10px; justify-content: flex-start; }
     .card { padding: 1rem 0.9rem; border-radius: 14px; }
     .tabs { margin-bottom: 1rem; }
     .tabs .tab { font-size: 0.8rem; padding: 0.4rem 0; }
+    .theme-pos { top: 0.35rem; right: 0.65rem; }
     .form-group { margin-bottom: 0.75rem; }
     textarea, input { padding: 0.6rem 0.7rem; font-size: 0.85rem; }
     .error-page h2 { font-size: 1rem; }
@@ -527,7 +539,7 @@ function layout(title, bodyContent) {
     '<meta charset="UTF-8">\n' +
     '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
     '<title>' + title + '</title>\n' +
-    '<meta http-equiv="Content-Security-Policy" content="default-src \'self\'; style-src \'unsafe-inline\' \'self\'; script-src \'unsafe-inline\' \'self\'; img-src \'self\' data:; font-src \'self\'; connect-src \'self\'; form-action \'self\'">\n' +
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'self\'; style-src \'unsafe-inline\' \'self\'; script-src \'unsafe-inline\' \'self\' static.cloudflareinsights.com; img-src \'self\' data:; font-src \'self\'; connect-src \'self\'; form-action \'self\'">\n' +
     '<script>(function(){var m=matchMedia(\'(prefers-color-scheme:dark)\');function apply(c){document.documentElement.className=c?\'dark\':\'\'}function label(){var e=document.getElementById(\'themeLabel\');if(!e)return;var t;try{t=localStorage.getItem(\'theme\')}catch(e){}if(!t||t===\'auto\')e.textContent=\'跟随系统\';else if(t===\'light\')e.textContent=\'浅色\';else e.textContent=\'深色\';}var t;try{t=localStorage.getItem(\'theme\')}catch(e){}if(!t||t===\'auto\'){apply(m.matches);m.addEventListener(\'change\',function(e){var s;try{s=localStorage.getItem(\'theme\')}catch(e){}if(!s||s===\'auto\')apply(e.matches);});}else apply(t===\'dark\');document.addEventListener(\'DOMContentLoaded\',label);})();function toggleTheme(){var t;try{t=localStorage.getItem(\'theme\')}catch(e){}var n;if(!t||t===\'auto\')n=\'light\';else if(t===\'light\')n=\'dark\';else n=\'auto\';var h=document.documentElement;if(n===\'dark\')h.className=\'dark\';else if(n===\'light\')h.className=\'\';else{h.className=matchMedia(\'(prefers-color-scheme:dark)\').matches?\'dark\':\'\';}try{localStorage.setItem(\'theme\',n)}catch(e){}var el=document.getElementById(\'themeLabel\');if(!el)return;if(n===\'auto\')el.textContent=\'跟随系统\';else if(n===\'light\')el.textContent=\'浅色\';else el.textContent=\'深色\';}<\/script>\n' +
     '<style>' + THEME + '</style>\n' +
     '</head>\n<body>' + bodyContent + '</body>\n</html>';
@@ -610,8 +622,8 @@ function homePage(env, origin) {
 	'function resetCreate(){document.getElementById(\'createForm\').style.display=\'\';document.getElementById(\'resultArea\').classList.add(\'hidden\');document.getElementById(\'resetBtn\').style.display=\'none\';document.getElementById(\'textEditor\').value=\'\';document.getElementById(\'password\').value=\'\';selectedFiles=[];updateFileList();updateCounter();}\n' +
 	    'async function handleCreate(){var btn=document.getElementById(\'createBtn\'),expire=document.querySelector(\'#expireMenu .select-option.active\').dataset.value,password=document.getElementById(\'password\').value||null;btn.disabled=true;btn.innerHTML=\'' + ICONS.share + '处理中...\';try{var data;if(currentTab===\'text\'){var content=document.getElementById(\'textEditor\').value;if(!content.trim()){showToast(\'请输入文本\');btn.disabled=false;btn.innerHTML=\'' + ICONS.share + '生成分享链接\';return;}if(content.length>MAX_CHARS){showToast(\'文本内容超出最大字符限制\');btn.disabled=false;btn.innerHTML=\'' + ICONS.share + '生成分享链接\';return;}var res=await fetch(\'/api/share\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({type:\'text\',content,expire,password})});data=await res.json();if(!res.ok){showToast(data.error||\'错误\');btn.disabled=false;btn.innerHTML=\'' + ICONS.share + '生成分享链接\';return;}}else{if(selectedFiles.length===0){showToast(\'请选择至少一个文件\');btn.disabled=false;btn.innerHTML=\'' + ICONS.share + '生成分享链接\';return;}for(var i=0;i<selectedFiles.length;i++){if(selectedFiles[i].size>MAX_FILE_SIZE){showToast(\'文件 \'+selectedFiles[i].name+\' 超出大小限制\');btn.disabled=false;btn.innerHTML=\'' + ICONS.share + '生成分享链接\';return;}}var form=new FormData();form.append(\'type\',\'file\');for(var f of selectedFiles)form.append(\'file\',f);form.append(\'expire\',expire);if(password)form.append(\'password\',password);data=await uploadWithProgress(form);}document.getElementById(\'resultArea\').innerHTML=showResult(data);document.getElementById(\'resultArea\').classList.remove(\'hidden\');document.getElementById(\'createForm\').style.display=\'none\';document.getElementById(\'resetBtn\').style.display=\'\';}catch(e){showToast(\'错误: \'+(e.error||e.message));}btn.disabled=false;btn.innerHTML=\'' + ICONS.share + '生成分享链接\';}\n' +
     'function hE(s){return(s||\'\').replace(/&/g,\'&amp;\').replace(/</g,\'&lt;\').replace(/>/g,\'&gt;\').replace(/\"/g,\'&quot;\').replace(/\'/g,\'&#x27;\');}\n' +
-    'function showResult(data){var pw=document.getElementById(\'password\').value;var pwText=pw?\'密码：\'+pw:\'无密码\';var expireMap={\'30m\':\'30 分钟后销毁\',\'1h\':\'1 小时后销毁\',\'6h\':\'6 小时后销毁\',\'12h\':\'12 小时后销毁\',\'burn\':\'阅后即焚\'};var expireText=expireMap[data.expire]||data.expire;var warnText=data.expire===\'burn\'?\'此链接被打开一次后将立即销毁\':\'此链接过期后将自动销毁，请及时分享给接收方\';return\'<div class="result-header"><div class="success-icon">' + ICONS.check + '</div><span class="success-title">\\u5206\\u4eab\\u94fe\\u63a5\\u5df2\\u521b\\u5efa</span></div><div class="link-box"><span class="link-text">\'+window.location.origin+\'/s/<strong>\'+hE(data.key)+\'</strong></span><svg class="copy-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" onclick="copyLink(\\\'\'+hE(data.key)+\'\\\',this)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg></div><div class="meta-row"><span class="tag">\'+pwText+\'</span><span class="tag">\'+(data.type===\'text\'?data.charCount+\' \\u5b57\\u7b26\':formatSize(data.size)+(data.fileCount?\' (\'+data.fileCount+\' \\u4e2a\\u6587\\u4ef6)\':\'\'))+\'</span><span class="tag">\'+expireText+\'</span></div><div class="warning-box">' + ICONS.warning + ' \'+warnText+\'</div>\';}\n' +
-    'function copyLink(k,el){navigator.clipboard.writeText(window.location.origin+\'/s/\'+k).then(function(){el.style.color=\'#16A34A\';showToast(\'链接已复制\',\'toast-success\');setTimeout(function(){el.style.color=\'\';},1500);});}\n' +
+    'function showResult(data){var pw=document.getElementById(\'password\').value;window._sharePw=pw;var pwText=pw?\'密码：\'+pw:\'无密码\';var expireMap={\'30m\':\'30 分钟后销毁\',\'1h\':\'1 小时后销毁\',\'6h\':\'6 小时后销毁\',\'12h\':\'12 小时后销毁\',\'burn\':\'阅后即焚\'};var expireText=expireMap[data.expire]||data.expire;var warnText=data.expire===\'burn\'?\'此链接被打开一次后将立即销毁\':\'此链接过期后将自动销毁，请及时提取\';return\'<div class="result-header"><div class="success-icon">' + ICONS.check + '</div><span class="success-title">\\u5206\\u4eab\\u94fe\\u63a5\\u5df2\\u521b\\u5efa</span></div><div class="link-box"><span class="link-text">\'+window.location.origin+\'/s/<strong>\'+hE(data.key)+\'</strong></span><svg class="copy-icon" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" onclick="copyLink(\\\'\'+hE(data.key)+\'\\\',this)"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg></div><div class="meta-row"><span class="tag">\'+pwText+\'</span><span class="tag">\'+(data.type===\'text\'?data.charCount+\' \\u5b57\\u7b26\':formatSize(data.size)+(data.fileCount?\' (\'+data.fileCount+\' \\u4e2a\\u6587\\u4ef6)\':\'\'))+\'</span><span class="tag">\'+expireText+\'</span></div><div class="warning-box">' + ICONS.warning + ' \'+warnText+\'</div>\';}\n' +
+    'function copyLink(k,el){var t=window.location.origin+\'/s/\'+k;if(window._sharePw)t+=\' 密码：\'+window._sharePw;navigator.clipboard.writeText(t).then(function(){el.style.color=\'#16A34A\';showToast(\'链接已复制\',\'toast-success\');setTimeout(function(){el.style.color=\'\';},1500);});}\n' +
     'updateCounter();setTimeout(function(){var t=document.getElementById(\'textEditor\'),c=document.getElementById(\'charCounter\'),u=document.querySelector(\'.upload-area\');if(t&&c&&u){var h=t.offsetHeight+c.offsetHeight;u.style.minHeight=h+\'px\';}},10);\n' +
     '<\/script>';
   return layout('shade', html);
@@ -632,7 +644,7 @@ function passwordPromptPage(key, origin, expireLabel, expiresAt) {
         '<div class="lock-icon-wrap">' +
           '<div class="lock-icon">' + ICONS.lock + '</div>' +
           '<h2 style="margin-top:0.75rem;font-size:1.1rem">此内容已加密</h2>' +
-          '<p style="color:var(--text-secondary);font-size:0.85rem;margin-top:0.25rem">' + (expireLabel === 'burn' ? '输入密码查看，此链接仅可查看一次' : '输入密码访问，内容将在 <span id="pwCountdown"></span> 后自动销毁') + '</p>' +
+          '<p style="color:var(--text-secondary);font-size:0.85rem;margin-top:0.25rem">' + (expireLabel === 'burn' ? '输入密码查看，此链接仅可查看一次' : '内容将在 <span id="pwCountdown"></span> 后自动销毁') + '</p>' +
         '</div>' +
         '<input type="password" id="passInput" placeholder="最多 6 位字符" autocomplete="off" maxlength="6" onkeydown="if(event.key===\'Enter\')submitPass()" oninput="this.value=this.value.replace(/\D/g,\'\')" style="margin-bottom:1rem">' +
         '<div class="pass-error" id="passError">' + ICONS.warning + '<span id="passErrorText"></span></div>' +
